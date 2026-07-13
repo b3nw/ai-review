@@ -293,11 +293,25 @@ async def test_approve_pull_request(
         github_vcs_client: GitHubVCSClient,
         fake_github_pull_requests_http_client: FakeGitHubPullRequestsHTTPClient,
 ):
-    await github_vcs_client.approve_pull_request()
+    await github_vcs_client.approve_pull_request("sha123")
     assert any(
-        name == "post" and "reviews" in args["url"] and args["json"]["event"] == "APPROVE"
+        name == "post" and "reviews" in args["url"] and args["json"]["event"] == "APPROVE" and args["json"]["commit_id"] == "sha123"
         for name, args in fake_github_pull_requests_http_client.calls
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("github_http_client_config")
+async def test_submit_review(
+        github_vcs_client: GitHubVCSClient,
+        fake_github_pull_requests_http_client: FakeGitHubPullRequestsHTTPClient,
+):
+    await github_vcs_client.submit_review("sha456", "COMMENT", "Comment body")
+    assert any(
+        name == "post" and "reviews" in args["url"] and args["json"]["event"] == "COMMENT" and args["json"]["body"] == "Comment body" and args["json"]["commit_id"] == "sha456"
+        for name, args in fake_github_pull_requests_http_client.calls
+    )
+
 
 
 @pytest.mark.asyncio

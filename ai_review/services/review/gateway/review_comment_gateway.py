@@ -102,6 +102,10 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
                 logger.warning(f"Falling back to general comment for {comment.file}:{comment.line}")
                 await self.process_inline_fallback_comment(SummaryCommentSchema(text=comment.fallback_body))
 
+            # Always track the processed inline comment as a finding, even on failure
+            self.created_inline_comments.append(comment)
+
+
 
     async def process_inline_fallback_comment(self, comment: SummaryCommentSchema) -> None:
         try:

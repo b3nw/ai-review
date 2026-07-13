@@ -384,8 +384,35 @@ async def test_approve_pull_request(
         gitea_vcs_client: GiteaVCSClient,
         fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
 ):
-    await gitea_vcs_client.approve_pull_request()
-    assert any(name == "approve_pull_request" for name, _ in fake_gitea_pull_requests_http_client.calls)
+    await gitea_vcs_client.approve_pull_request("sha123")
+    review_calls = [
+        args for name, args in fake_gitea_pull_requests_http_client.calls
+        if name == "create_review"
+    ]
+    assert len(review_calls) == 1
+    call_args = review_calls[0]
+    assert call_args["event"] == "APPROVED"
+    assert call_args["commit_id"] == "sha123"
+    assert call_args["body"] == "Approved by AI reviewer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_submit_review(
+        gitea_vcs_client: GiteaVCSClient,
+        fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
+):
+    await gitea_vcs_client.submit_review(commit_id="sha456", event="COMMENT", body="Comment body")
+    review_calls = [
+        args for name, args in fake_gitea_pull_requests_http_client.calls
+        if name == "create_review"
+    ]
+    assert len(review_calls) == 1
+    call_args = review_calls[0]
+    assert call_args["event"] == "COMMENT"
+    assert call_args["commit_id"] == "sha456"
+    assert call_args["body"] == "Comment body"
+
 
 
 @pytest.mark.asyncio

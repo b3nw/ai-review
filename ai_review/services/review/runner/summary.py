@@ -101,13 +101,16 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
         # Determine status and recommendation
         if issues_count > 0:
             status_line = f"Status: {issues_count} Issue{'s' if issues_count > 1 else ''} Found | Recommendation: Address before merge"
-            recommend_merge = False
+            review_event = "COMMENT"
+            review_body = "Address before merge"
         elif suggestions_count > 0:
-            status_line = f"Status: Suggestions Only | Recommendation: Merge"
-            recommend_merge = True
+            status_line = f"Status: Suggestions Only | Recommendation: Comment"
+            review_event = "COMMENT"
+            review_body = "Suggestions only"
         else:
             status_line = f"Status: No Issues Found | Recommendation: Merge"
-            recommend_merge = True
+            review_event = "APPROVED"
+            review_body = "Approved by AI reviewer"
 
         # Build file list breakdown
         file_list_lines = []
@@ -147,9 +150,17 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
         logger.info(f"Posting summary review comment ({len(summary.text)} chars)")
         await self.review_comment_gateway.process_summary_comment(summary)
 
-        if recommend_merge:
-            logger.info("Recommendation is Merge. Approving Pull Request.")
-            await self.vcs.approve_pull_request()
+        head_sha = review_info.head_sha or ""
+        logger.info(f"Submitting formal review: event={review_event}, commit_id={head_sha}")
+        try:
+            await self.vcs.submit_review(
+                commit_id=head_sha,
+                event=review_event,
+                body=review_body,
+            )
+        except Exception as error:
+            logger.warning(f"Failed to submit formal review: {error}")
+
 
         await hook.emit_summary_review_complete(self.cost.aggregate())
 

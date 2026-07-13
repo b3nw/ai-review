@@ -156,12 +156,17 @@ class GiteaPullRequestsHTTPClient(HTTPClient, GiteaPullRequestsHTTPClientProtoco
             self,
             owner: str,
             repo: str,
-            pull_number: str
+            pull_number: str,
+            commit_id: str | None = None
     ) -> Response:
+        payload = {"event": "APPROVED", "body": "Approved by AI reviewer"}
+        if commit_id:
+            payload["commit_id"] = commit_id
         return await self.post(
             f"/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
-            json={"event": "APPROVE", "body": "Approved by AI reviewer"}
+            json=payload
         )
+
 
     @handle_http_error(client="GiteaPullRequestsHTTPClient", exception=GiteaPullRequestsHTTPClientError)
     async def update_general_comment_api(
@@ -287,8 +292,9 @@ class GiteaPullRequestsHTTPClient(HTTPClient, GiteaPullRequestsHTTPClientProtoco
     async def request_reviewers(self, owner: str, repo: str, pull_number: str, reviewers: list[str]) -> None:
         await self.request_reviewers_api(owner, repo, pull_number, reviewers)
 
-    async def approve_pull_request(self, owner: str, repo: str, pull_number: str) -> None:
-        await self.approve_pull_request_api(owner, repo, pull_number)
+    async def approve_pull_request(self, owner: str, repo: str, pull_number: str, commit_id: str | None = None) -> None:
+        await self.approve_pull_request_api(owner, repo, pull_number, commit_id)
+
 
     async def update_general_comment(self, owner: str, repo: str, comment_id: int | str, message: str) -> None:
         await self.update_general_comment_api(owner, repo, comment_id, message)

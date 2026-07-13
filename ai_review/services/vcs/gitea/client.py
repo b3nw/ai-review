@@ -247,17 +247,30 @@ class GiteaVCSClient(VCSClientProtocol):
             # It should not fail the entire review run if code analysis succeeded.
             logger.exception(f"Failed to request reviewers {reviewers}: {error}")
 
-    async def approve_pull_request(self) -> None:
+    async def approve_pull_request(self, commit_id: str) -> None:
+        await self.submit_review(commit_id=commit_id, event="APPROVED", body="Approved by AI reviewer")
+
+    async def submit_review(self, commit_id: str, event: str, body: str) -> None:
         try:
-            await self.http_client.pr.approve_pull_request(
+            gitea_event = event
+            if event == "APPROVE":
+                gitea_event = "APPROVED"
+            await self.http_client.pr.create_review(
                 owner=self.owner,
                 repo=self.repo,
                 pull_number=self.pull_number,
+                request=GiteaCreateReviewRequestSchema(
+                    event=gitea_event,
+                    body=body,
+                    commit_id=commit_id,
+                )
             )
         except Exception as error:
-            # Swallowed: PR approval failure is a non-critical permission/workflow action.
+            # Swallowed: PR formal review failure is a non-critical permission/workflow action.
             # Swallowing it prevents crashing the run when review comments have been posted.
-            logger.exception(f"Failed to approve PR: {error}")
+            logger.exception(f"Failed to submit review {event}: {error}")
+
+
 
     async def update_general_comment(self, comment_id: int | str, message: str) -> None:
         try:

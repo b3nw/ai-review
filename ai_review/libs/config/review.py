@@ -34,3 +34,5 @@ class ReviewConfig(BaseModel):
     max_inline_comments: int | None = None
     max_context_comments: int | None = None
     inline_comment_fallback: bool = True
+    reviewer_username: str | None = None
+

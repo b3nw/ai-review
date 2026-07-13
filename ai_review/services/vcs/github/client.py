@@ -282,16 +282,27 @@ class GitHubVCSClient(VCSClientProtocol):
             # It should not fail the entire review run if code analysis succeeded.
             logger.exception(f"Failed to request reviewers {reviewers}: {error}")
 
-    async def approve_pull_request(self) -> None:
+    async def approve_pull_request(self, commit_id: str) -> None:
+        await self.submit_review(commit_id=commit_id, event="APPROVE", body="Approved by AI reviewer")
+
+    async def submit_review(self, commit_id: str, event: str, body: str) -> None:
         try:
+            github_event = event
+            if event == "APPROVED":
+                github_event = "APPROVE"
+            payload = {"event": github_event, "body": body}
+            if commit_id:
+                payload["commit_id"] = commit_id
             await self.http_client.pr.post(
                 f"/repos/{self.owner}/{self.repo}/pulls/{self.pull_number}/reviews",
-                json={"event": "APPROVE", "body": "Approved by AI reviewer"}
+                json=payload
             )
         except Exception as error:
-            # Swallowed: PR approval failure is a non-critical permission/workflow action.
+            # Swallowed: PR formal review failure is a non-critical permission/workflow action.
             # Swallowing it prevents crashing the run when review comments have been posted.
-            logger.exception(f"Failed to approve PR: {error}")
+            logger.exception(f"Failed to submit review {event}: {error}")
+
+
 
     async def update_general_comment(self, comment_id: int | str, message: str) -> None:
         try:

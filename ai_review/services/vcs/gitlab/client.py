@@ -269,8 +269,13 @@ class GitLabVCSClient(VCSClientProtocol):
     async def request_reviewers(self, reviewers: list[str]) -> None:
         pass
 
-    async def approve_pull_request(self) -> None:
+    async def approve_pull_request(self, commit_id: str) -> None:
         pass
+
+    async def submit_review(self, commit_id: str, event: str, body: str) -> None:
+        pass
+
+
 
     async def update_general_comment(self, comment_id: int | str, message: str) -> None:
         pass

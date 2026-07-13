@@ -114,9 +114,11 @@ class VCSClientProtocol(Protocol):
     async def request_reviewers(self, reviewers: list[str]) -> None:
         """Request the specified users as reviewers."""
 
-    async def approve_pull_request(self) -> None:
-        """Approve the PR/MR (submit an approving review)."""
+    async def approve_pull_request(self, commit_id: str) -> None:
+        """Approve the PR/MR (submit an approving review for the specific commit_id)."""
+
+    async def submit_review(self, commit_id: str, event: str, body: str) -> None:
+        """Submit a formal review (APPROVED, COMMENT, or REQUEST_CHANGES) for a specific commit_id."""
 
     async def update_general_comment(self, comment_id: int | str, message: str) -> None:
         """Update/edit an existing general comment."""
-

@@ -95,3 +95,82 @@ async def test_run_skips_when_empty_summary_from_llm(
 
     assert any(call[0] == "ask" for call in fake_review_direct_llm_gateway.calls)
     assert not any(call[0] == "process_summary_comment" for call in fake_review_comment_gateway.calls)
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_no_findings(
+        summary_review_runner: SummaryReviewRunner,
+        fake_vcs_client: FakeVCSClient,
+        fake_review_comment_gateway: FakeReviewCommentGateway,
+):
+    """No findings => APPROVED review submitted."""
+    fake_review_comment_gateway.created_inline_comments = []
+
+    await summary_review_runner.run()
+
+    submit_review_calls = [call for call in fake_vcs_client.calls if call[0] == "submit_review"]
+    assert len(submit_review_calls) == 1
+    call_args = submit_review_calls[0]
+    assert call_args[1][1] == "APPROVED"  # event
+    assert "No Issues Found" in fake_review_comment_gateway.calls[-1][1]["comment"].text
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_suggestions_only(
+        summary_review_runner: SummaryReviewRunner,
+        fake_vcs_client: FakeVCSClient,
+        fake_review_comment_gateway: FakeReviewCommentGateway,
+):
+    """Suggestions only => COMMENT review submitted (no approval)."""
+    from ai_review.services.review.internal.inline.schema import InlineCommentSchema
+    fake_review_comment_gateway.created_inline_comments = [
+        InlineCommentSchema(file="app.py", line=10, message="Use descriptive names", severity="SUGGESTION")
+    ]
+
+    await summary_review_runner.run()
+
+    submit_review_calls = [call for call in fake_vcs_client.calls if call[0] == "submit_review"]
+    assert len(submit_review_calls) == 1
+    call_args = submit_review_calls[0]
+    assert call_args[1][1] == "COMMENT"
+    assert "Suggestions Only" in fake_review_comment_gateway.calls[-1][1]["comment"].text
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_warnings_critical(
+        summary_review_runner: SummaryReviewRunner,
+        fake_vcs_client: FakeVCSClient,
+        fake_review_comment_gateway: FakeReviewCommentGateway,
+):
+    """Warning/critical issues => COMMENT review submitted (no approval)."""
+    from ai_review.services.review.internal.inline.schema import InlineCommentSchema
+    fake_review_comment_gateway.created_inline_comments = [
+        InlineCommentSchema(file="app.py", line=10, message="Null pointer potential", severity="CRITICAL")
+    ]
+
+    await summary_review_runner.run()
+
+    submit_review_calls = [call for call in fake_vcs_client.calls if call[0] == "submit_review"]
+    assert len(submit_review_calls) == 1
+    call_args = submit_review_calls[0]
+    assert call_args[1][1] == "COMMENT"
+    assert "1 Issue Found" in fake_review_comment_gateway.calls[-1][1]["comment"].text
+
+
+@pytest.mark.asyncio
+async def test_inline_finding_prevents_no_issues_found(
+        summary_review_runner: SummaryReviewRunner,
+        fake_review_comment_gateway: FakeReviewCommentGateway,
+):
+    """Any inline finding (e.g. suggestion) must prevent reporting 'No Issues Found'."""
+    from ai_review.services.review.internal.inline.schema import InlineCommentSchema
+    fake_review_comment_gateway.created_inline_comments = [
+        InlineCommentSchema(file="app.py", line=5, message="refactor", severity="SUGGESTION")
+    ]
+
+    await summary_review_runner.run()
+
+    summary_comment = fake_review_comment_gateway.calls[-1][1]["comment"]
+    assert "Suggestions Only" in summary_comment.text
+    assert "No Issues Found" not in summary_comment.text
+

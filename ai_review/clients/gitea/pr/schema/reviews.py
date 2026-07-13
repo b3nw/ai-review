@@ -30,9 +30,10 @@ class GiteaReviewInlineCommentSchema(BaseModel):
 
 class GiteaCreateReviewRequestSchema(BaseModel):
     body: str | None = None
-    event: Literal["COMMENT", "APPROVE", "REQUEST_CHANGES", "PENDING"] = "COMMENT"
+    event: Literal["COMMENT", "APPROVED", "REQUEST_CHANGES", "PENDING", "REQUEST_REVIEW"] = "COMMENT"
     comments: list[GiteaReviewInlineCommentSchema] = Field(default_factory=list)
     commit_id: str | None = None
+
 
 
 

@@ -489,3 +489,28 @@ def test_build_summary_body_with_history(
     assert "Status: 1 Issue Found | Recommendation: Address before merge" in result
     assert result.endswith(f"\n\n{settings.review.summary_tag}")
 
+
+@pytest.mark.asyncio
+async def test_inline_comment_failure_falls_back_and_tracks_finding(
+        fake_vcs_client: FakeVCSClient,
+        review_comment_gateway: ReviewCommentGateway,
+):
+    """When posting an inline comment fails, it falls back and is still tracked in created_inline_comments."""
+    async def failing_create_inline_comment(file: str, line: int, message: str):
+        raise RuntimeError("Failed to post inline")
+
+    fake_vcs_client.create_inline_comment = failing_create_inline_comment
+
+    from ai_review.services.review.internal.inline.schema import InlineCommentSchema
+    comment = InlineCommentSchema(file="x.py", line=10, message="AI inline", severity="CRITICAL")
+    await review_comment_gateway.process_inline_comment(comment)
+
+    # Check that it fell back to a general comment
+    assert any(call[0] == "create_general_comment" for call in fake_vcs_client.calls)
+
+    # Check that it is still tracked in created_inline_comments
+    assert len(review_comment_gateway.created_inline_comments) == 1
+    assert review_comment_gateway.created_inline_comments[0].file == "x.py"
+    assert review_comment_gateway.created_inline_comments[0].severity == "CRITICAL"
+
+

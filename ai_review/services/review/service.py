@@ -133,14 +133,28 @@ class ReviewService:
     async def assign_reviewer(self) -> None:
         if self._reviewer_assigned:
             return
-        try:
-            login = await self.vcs.get_authenticated_user_login()
-            if login:
+        
+        login = None
+        if getattr(settings.review, "reviewer_username", None):
+            login = settings.review.reviewer_username
+            logger.info(f"Using configured reviewer username override: {login}")
+
+        if not login:
+            try:
+                login = await self.vcs.get_authenticated_user_login()
+            except Exception as error:
+                logger.warning(f"Failed to fetch authenticated user login: {error}")
+
+        if login:
+            try:
                 logger.info(f"Assigning {login} as requested reviewer")
                 await self.vcs.request_reviewers([login])
                 self._reviewer_assigned = True
-        except Exception as error:
-            logger.warning(f"Failed to auto-assign reviewer: {error}")
+            except Exception as error:
+                logger.warning(f"Failed to request reviewer assignment for {login}: {error}")
+        else:
+            logger.warning("No reviewer username configured or discovered via API, skipping reviewer assignment.")
+
 
 
     async def run_inline_review(self) -> None:

@@ -93,10 +93,17 @@ class FakeVCSClient(VCSClientProtocol):
         if error := self.responses.get("request_reviewers_error"):
             raise error
 
-    async def approve_pull_request(self) -> None:
-        self.calls.append(("approve_pull_request", (), {}))
+    async def approve_pull_request(self, commit_id: str) -> None:
+        self.calls.append(("approve_pull_request", (commit_id,), {}))
         if error := self.responses.get("approve_pull_request_error"):
             raise error
+
+    async def submit_review(self, commit_id: str, event: str, body: str) -> None:
+        self.calls.append(("submit_review", (commit_id, event, body), {}))
+        if error := self.responses.get("submit_review_error"):
+            raise error
+
+
 
     async def update_general_comment(self, comment_id: int | str, message: str) -> None:
         self.calls.append(("update_general_comment", (comment_id, message), {}))
