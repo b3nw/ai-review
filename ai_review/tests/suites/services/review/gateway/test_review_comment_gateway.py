@@ -472,3 +472,20 @@ async def test_get_summary_comments_excludes_fallback_comments(
 
     assert len(result) == 1
     assert result[0].id == "10"
+
+
+def test_build_summary_body_with_history(
+        review_comment_gateway: ReviewCommentGateway,
+):
+    """Should correctly construct summary body with stack of previous review history."""
+    new_text = "Status: Suggestions Only | Recommendation: Merge\n\nNew overview\n\n- file.py - 0 issues\n\n[abcdefg](http://commit/abcdefg)"
+    old_body = "Status: 1 Issue Found | Recommendation: Address before merge\n\nOld overview\n\n- file.py - 1 issue(s)\n\n[1234567](http://commit/1234567)\n\n#ai-review-summary"
+
+    result = review_comment_gateway.build_summary_body_with_history(new_text, old_body)
+
+    assert "Status: Suggestions Only | Recommendation: Merge" in result
+    assert "<!-- ai-review-history-separator -->" in result
+    assert "### Previous review (commit 1234567)" in result
+    assert "Status: 1 Issue Found | Recommendation: Address before merge" in result
+    assert result.endswith(f"\n\n{settings.review.summary_tag}")
+

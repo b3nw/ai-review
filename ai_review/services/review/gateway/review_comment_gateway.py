@@ -1,6 +1,9 @@
+import re
+
 from ai_review.config import settings
 from ai_review.libs.asynchronous.gather import bounded_gather
 from ai_review.libs.logger import get_logger
+
 from ai_review.services.artifacts.types import ArtifactsServiceProtocol
 from ai_review.services.hook import hook
 from ai_review.services.review.gateway.types import ReviewCommentGatewayProtocol
@@ -17,6 +20,7 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
     def __init__(self, vcs: VCSClientProtocol, artifacts: ArtifactsServiceProtocol):
         self.vcs = vcs
         self.artifacts = artifacts
+        self.created_inline_comments: list[InlineCommentSchema] = []
 
     async def get_inline_threads(self) -> list[ReviewThreadSchema]:
         threads = await self.vcs.get_inline_threads()
@@ -84,6 +88,7 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
                 line=comment.line,
                 message=comment.body_with_tag,
             )
+            self.created_inline_comments.append(comment)
             await hook.emit_inline_comment_complete(comment)
 
             await self.artifacts.save_vcs_inline(comment)
@@ -97,6 +102,7 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
                 logger.warning(f"Falling back to general comment for {comment.file}:{comment.line}")
                 await self.process_inline_fallback_comment(SummaryCommentSchema(text=comment.fallback_body))
 
+
     async def process_inline_fallback_comment(self, comment: SummaryCommentSchema) -> None:
         try:
             await hook.emit_summary_comment_start(comment)
@@ -108,12 +114,50 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
             logger.exception(f"Failed to process inline fallback comment: {comment} — {error}")
             await hook.emit_summary_comment_error(comment)
 
+    def build_summary_body_with_history(self, new_text: str, old_body: str) -> str:
+        tag = settings.review.summary_tag
+        old_body_clean = old_body.replace(tag, "").strip()
+
+        separator = "<!-- ai-review-history-separator -->"
+        notice = "Current summary above is authoritative. Previous snapshots are kept for context only."
+
+        if separator in old_body_clean:
+            parts = old_body_clean.split(separator, 1)
+            prev_latest = parts[0].strip()
+            prev_history = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            prev_latest = old_body_clean
+            prev_history = ""
+
+        sha_match = re.search(r'\[([0-9a-f]{7})\]\(', prev_latest)
+        if sha_match:
+            prev_sha = sha_match.group(1)
+            prev_header = f"### Previous review (commit {prev_sha})"
+        else:
+            prev_header = "### Previous review"
+
+        history_block = f"\n\n{notice}\n\n{prev_header}\n{prev_latest}"
+        if prev_history:
+            history_block += f"\n\n{prev_history}"
+
+        return f"{new_text}\n\n{separator}{history_block}\n\n{tag}"
+
+
     async def process_summary_comment(self, comment: SummaryCommentSchema) -> None:
         try:
             await hook.emit_summary_comment_start(comment)
-            await self.vcs.create_general_comment(comment.body_with_tag)
-            await hook.emit_summary_comment_complete(comment)
 
+            existing_comments = await self.get_summary_comments()
+            if existing_comments:
+                existing_comment = existing_comments[0]
+                new_body = self.build_summary_body_with_history(comment.text, existing_comment.body)
+                await self.vcs.update_general_comment(existing_comment.id, new_body)
+                logger.info(f"Updated existing summary comment {existing_comment.id}")
+            else:
+                await self.vcs.create_general_comment(comment.body_with_tag)
+                logger.info("Created new summary comment")
+
+            await hook.emit_summary_comment_complete(comment)
             await self.artifacts.save_vcs_summary(comment)
         except Exception as error:
             logger.exception(f"Failed to process summary comment: {comment} — {error}")

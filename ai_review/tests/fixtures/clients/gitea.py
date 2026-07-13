@@ -167,6 +167,20 @@ class FakeGiteaPullRequestsHTTPClient(GiteaPullRequestsHTTPClientProtocol):
             ("delete_review_comment", {"owner": owner, "repo": repo, "comment_id": comment_id})
         )
 
+    async def get_authenticated_user(self) -> GiteaUserSchema:
+        self.calls.append(("get_authenticated_user", {}))
+        return GiteaUserSchema(id=101, login="ai-bot")
+
+    async def request_reviewers(self, owner: str, repo: str, pull_number: str, reviewers: list[str]) -> None:
+        self.calls.append(("request_reviewers", {"owner": owner, "repo": repo, "pull_number": pull_number, "reviewers": reviewers}))
+
+    async def approve_pull_request(self, owner: str, repo: str, pull_number: str) -> None:
+        self.calls.append(("approve_pull_request", {"owner": owner, "repo": repo, "pull_number": pull_number}))
+
+    async def update_general_comment(self, owner: str, repo: str, comment_id: int | str, message: str) -> None:
+        self.calls.append(("update_general_comment", {"owner": owner, "repo": repo, "comment_id": comment_id, "message": message}))
+
+
 
 class FakeGiteaHTTPClient:
     def __init__(self, pull_requests_client: FakeGiteaPullRequestsHTTPClient):

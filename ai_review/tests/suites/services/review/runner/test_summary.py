@@ -42,13 +42,13 @@ async def test_run_happy_path(
 
 
 @pytest.mark.asyncio
-async def test_run_skips_when_existing_summary_comments(
+async def test_run_does_not_skip_when_existing_summary_comments(
         summary_review_runner: SummaryReviewRunner,
         fake_vcs_client: FakeVCSClient,
         fake_review_comment_gateway: FakeReviewCommentGateway,
         fake_review_direct_llm_gateway: FakeReviewDirectLLMGateway,
 ):
-    """Should skip summary review if summary comment already exists."""
+    """Should NOT skip summary review if summary comment already exists."""
     fake_review_comment_gateway.responses["get_summary_comments"] = [
         ReviewCommentSchema(id="1", body="#ai-review-summary existing"),
     ]
@@ -56,8 +56,10 @@ async def test_run_skips_when_existing_summary_comments(
     await summary_review_runner.run()
 
     vcs_calls = [call[0] for call in fake_vcs_client.calls]
-    assert vcs_calls == []
-    assert not any(call[0] == "ask" for call in fake_review_direct_llm_gateway.calls)
+    assert "get_review_info" in vcs_calls
+    assert any(call[0] == "ask" for call in fake_review_direct_llm_gateway.calls)
+    assert any(call[0] == "process_summary_comment" for call in fake_review_comment_gateway.calls)
+
 
 
 @pytest.mark.asyncio

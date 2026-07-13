@@ -80,6 +80,30 @@ class FakeVCSClient(VCSClientProtocol):
         self.calls.append(("get_general_threads", (), {}))
         return self.responses.get("get_general_threads", [])
 
+    async def get_commit_url(self, sha: str) -> str | None:
+        self.calls.append(("get_commit_url", (sha,), {}))
+        return self.responses.get("get_commit_url", f"https://fakevcs.com/commit/{sha}")
+
+    async def get_authenticated_user_login(self) -> str | None:
+        self.calls.append(("get_authenticated_user_login", (), {}))
+        return self.responses.get("get_authenticated_user_login", "ai-bot")
+
+    async def request_reviewers(self, reviewers: list[str]) -> None:
+        self.calls.append(("request_reviewers", (reviewers,), {}))
+        if error := self.responses.get("request_reviewers_error"):
+            raise error
+
+    async def approve_pull_request(self) -> None:
+        self.calls.append(("approve_pull_request", (), {}))
+        if error := self.responses.get("approve_pull_request_error"):
+            raise error
+
+    async def update_general_comment(self, comment_id: int | str, message: str) -> None:
+        self.calls.append(("update_general_comment", (comment_id, message), {}))
+        if error := self.responses.get("update_general_comment_error"):
+            raise error
+
+
 
 @pytest.fixture
 def fake_vcs_client() -> FakeVCSClient:

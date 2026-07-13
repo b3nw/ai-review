@@ -258,3 +258,66 @@ async def test_delete_inline_comment_calls_delete_review_comment(
     assert call_args["comment_id"] == str(comment_id)
     assert call_args["owner"] == "owner"
     assert call_args["repo"] == "repo"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("github_http_client_config")
+async def test_get_authenticated_user_login(
+        github_vcs_client: GitHubVCSClient,
+        fake_github_pull_requests_http_client: FakeGitHubPullRequestsHTTPClient,
+):
+    login = await github_vcs_client.get_authenticated_user_login()
+    assert login == "ai-bot"
+    assert any(
+        name == "get" and args["url"] == "/user"
+        for name, args in fake_github_pull_requests_http_client.calls
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("github_http_client_config")
+async def test_request_reviewers(
+        github_vcs_client: GitHubVCSClient,
+        fake_github_pull_requests_http_client: FakeGitHubPullRequestsHTTPClient,
+):
+    await github_vcs_client.request_reviewers(["reviewer1"])
+    assert any(
+        name == "post" and "requested_reviewers" in args["url"] and args["json"] == {"reviewers": ["reviewer1"]}
+        for name, args in fake_github_pull_requests_http_client.calls
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("github_http_client_config")
+async def test_approve_pull_request(
+        github_vcs_client: GitHubVCSClient,
+        fake_github_pull_requests_http_client: FakeGitHubPullRequestsHTTPClient,
+):
+    await github_vcs_client.approve_pull_request()
+    assert any(
+        name == "post" and "reviews" in args["url"] and args["json"]["event"] == "APPROVE"
+        for name, args in fake_github_pull_requests_http_client.calls
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("github_http_client_config")
+async def test_update_general_comment(
+        github_vcs_client: GitHubVCSClient,
+        fake_github_pull_requests_http_client: FakeGitHubPullRequestsHTTPClient,
+):
+    await github_vcs_client.update_general_comment(123, "New message")
+    assert any(
+        name == "patch" and "comments/123" in args["url"] and args["json"] == {"body": "New message"}
+        for name, args in fake_github_pull_requests_http_client.calls
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("github_http_client_config")
+async def test_get_commit_url(
+        github_vcs_client: GitHubVCSClient,
+):
+    url = await github_vcs_client.get_commit_url("sha1234567")
+    assert url == "https://github.com/owner/repo/commit/sha1234567"
+

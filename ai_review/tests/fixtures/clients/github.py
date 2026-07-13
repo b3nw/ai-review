@@ -1,4 +1,5 @@
 import pytest
+from typing import Any
 from pydantic import HttpUrl, SecretStr
 
 from ai_review.clients.github.pr.schema.comments import (
@@ -159,6 +160,24 @@ class FakeGitHubPullRequestsHTTPClient(GitHubPullRequestsHTTPClientProtocol):
         self.calls.append(
             ("delete_review_comment", {"owner": owner, "repo": repo, "comment_id": comment_id})
         )
+
+    async def get(self, url: str, **kwargs) -> Any:
+        self.calls.append(("get", {"url": url, **kwargs}))
+        if url == "/user":
+            class MockResponse:
+                def json(self) -> dict:
+                    return {"login": "ai-bot"}
+            return MockResponse()
+        return None
+
+    async def post(self, url: str, json: Any = None, **kwargs) -> Any:
+        self.calls.append(("post", {"url": url, "json": json, **kwargs}))
+        return None
+
+    async def patch(self, url: str, json: Any = None, **kwargs) -> Any:
+        self.calls.append(("patch", {"url": url, "json": json, **kwargs}))
+        return None
+
 
 
 class FakeGitHubHTTPClient:

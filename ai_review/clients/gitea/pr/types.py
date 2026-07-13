@@ -13,6 +13,8 @@ from ai_review.clients.gitea.pr.schema.reviews import (
     GiteaCreateReviewResponseSchema,
     GiteaGetReviewCommentsResponseSchema,
 )
+from ai_review.clients.gitea.pr.schema.user import GiteaUserSchema
+
 
 
 class GiteaPullRequestsHTTPClientProtocol(Protocol):
@@ -49,3 +51,12 @@ class GiteaPullRequestsHTTPClientProtocol(Protocol):
     async def delete_issue_comment(self, owner: str, repo: str, comment_id: int | str) -> None: ...
 
     async def delete_review_comment(self, owner: str, repo: str, comment_id: int | str) -> None: ...
+
+    async def get_authenticated_user(self) -> GiteaUserSchema: ...
+
+    async def request_reviewers(self, owner: str, repo: str, pull_number: str, reviewers: list[str]) -> None: ...
+
+    async def approve_pull_request(self, owner: str, repo: str, pull_number: str) -> None: ...
+
+    async def update_general_comment(self, owner: str, repo: str, comment_id: int | str, message: str) -> None: ...
+

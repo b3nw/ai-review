@@ -352,3 +352,61 @@ async def test_delete_general_comment_raises_on_error(
 
     with pytest.raises(RuntimeError):
         await gitea_vcs_client.delete_general_comment(123)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_get_authenticated_user_login(
+        gitea_vcs_client: GiteaVCSClient,
+        fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
+):
+    login = await gitea_vcs_client.get_authenticated_user_login()
+    assert login == "ai-bot"
+    assert any(name == "get_authenticated_user" for name, _ in fake_gitea_pull_requests_http_client.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_request_reviewers(
+        gitea_vcs_client: GiteaVCSClient,
+        fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
+):
+    await gitea_vcs_client.request_reviewers(["reviewer1"])
+    assert any(
+        name == "request_reviewers" and args["reviewers"] == ["reviewer1"]
+        for name, args in fake_gitea_pull_requests_http_client.calls
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_approve_pull_request(
+        gitea_vcs_client: GiteaVCSClient,
+        fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
+):
+    await gitea_vcs_client.approve_pull_request()
+    assert any(name == "approve_pull_request" for name, _ in fake_gitea_pull_requests_http_client.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_update_general_comment(
+        gitea_vcs_client: GiteaVCSClient,
+        fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
+):
+    await gitea_vcs_client.update_general_comment(123, "New message")
+    assert any(
+        name == "update_general_comment" and args["comment_id"] == 123 and args["message"] == "New message"
+        for name, args in fake_gitea_pull_requests_http_client.calls
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_get_commit_url(
+        gitea_vcs_client: GiteaVCSClient,
+):
+    url = await gitea_vcs_client.get_commit_url("sha1234567")
+    assert url == "https://gitea.example.com/owner/repo/commit/sha1234567"
+
+

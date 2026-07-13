@@ -102,3 +102,21 @@ class VCSClientProtocol(Protocol):
         Fetch grouped general (summary-level) comment threads.
         If VCS is flat (e.g. GitHub issues), each comment is a separate thread.
         """
+
+    async def get_commit_url(self, sha: str) -> str | None:
+        """Get the web URL for a specific commit SHA."""
+
+    # --- Reviewer management & approvals ---
+
+    async def get_authenticated_user_login(self) -> str | None:
+        """Fetch the login username of the currently authenticated user/token."""
+
+    async def request_reviewers(self, reviewers: list[str]) -> None:
+        """Request the specified users as reviewers."""
+
+    async def approve_pull_request(self) -> None:
+        """Approve the PR/MR (submit an approving review)."""
+
+    async def update_general_comment(self, comment_id: int | str, message: str) -> None:
+        """Update/edit an existing general comment."""
+

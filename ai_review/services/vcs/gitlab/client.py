@@ -258,3 +258,20 @@ class GitLabVCSClient(VCSClientProtocol):
         except Exception as error:
             logger.exception(f"Failed to build general threads for MR {self.merge_request_ref}: {error}")
             return []
+
+    async def get_commit_url(self, sha: str) -> str | None:
+        return None
+
+    # --- Reviewer management & approvals ---
+    async def get_authenticated_user_login(self) -> str | None:
+        return None
+
+    async def request_reviewers(self, reviewers: list[str]) -> None:
+        pass
+
+    async def approve_pull_request(self) -> None:
+        pass
+
+    async def update_general_comment(self, comment_id: int | str, message: str) -> None:
+        pass
+

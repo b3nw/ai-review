@@ -1,5 +1,7 @@
+from ai_review.config import settings
 from ai_review.libs.logger import get_logger
 from ai_review.services.cost.types import CostServiceProtocol
+
 from ai_review.services.diff.types import DiffServiceProtocol
 from ai_review.services.git.types import GitServiceProtocol
 from ai_review.services.hook import hook
@@ -40,11 +42,6 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
     async def run(self) -> None:
         await hook.emit_summary_review_start()
 
-        comments = await self.review_comment_gateway.get_summary_comments()
-        if comments:
-            logger.info(f"Detected {len(comments)} existing AI summary comments, skipping summary review")
-            return
-
         review_info = await self.vcs.get_review_info()
         changed_files = self.policy.apply_for_files(review_info.changed_files)
         if not changed_files:
@@ -61,6 +58,17 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
         )
         prompt_context = build_prompt_context_from_review_info(review_info)
         prompt = self.prompt.build_summary_request(rendered_files, prompt_context)
+
+        # Inject currently created inline comments into prompt context
+        current_inline_comments = self.review_comment_gateway.created_inline_comments
+
+        if current_inline_comments:
+            inline_feedback = "\n".join([
+                f"- {c.file}:{c.line} ({c.severity}): {c.message}"
+                for c in current_inline_comments
+            ])
+            prompt += f"\n\nHere is the detailed inline feedback/issues identified on specific lines:\n{inline_feedback}"
+
         prompt_system = self.prompt.build_system_summary_request(prompt_context)
         prompt_result = await self.review_llm_gateway.ask(prompt, prompt_system)
 
@@ -69,6 +77,79 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
             logger.warning("Summary LLM output was empty, skipping comment")
             return
 
+        # Calculate issue and suggestion counts
+        issues_count = 0
+        suggestions_count = 0
+
+        def normalize_path(path: str) -> str:
+            return path.strip().replace("\\", "/").lstrip("/")
+
+        file_issues = {normalize_path(f): [0, 0] for f in changed_files}
+
+        for c in current_inline_comments:
+            file_path = normalize_path(c.file)
+            if file_path not in file_issues:
+                file_issues[file_path] = [0, 0]
+            if c.severity in ("CRITICAL", "WARNING"):
+                issues_count += 1
+                file_issues[file_path][0] += 1
+            else:
+                suggestions_count += 1
+                file_issues[file_path][1] += 1
+
+
+        # Determine status and recommendation
+        if issues_count > 0:
+            status_line = f"Status: {issues_count} Issue{'s' if issues_count > 1 else ''} Found | Recommendation: Address before merge"
+            recommend_merge = False
+        elif suggestions_count > 0:
+            status_line = f"Status: Suggestions Only | Recommendation: Merge"
+            recommend_merge = True
+        else:
+            status_line = f"Status: No Issues Found | Recommendation: Merge"
+            recommend_merge = True
+
+        # Build file list breakdown
+        file_list_lines = []
+        for f, (i_c, s_c) in file_issues.items():
+            parts = []
+            if i_c > 0:
+                parts.append(f"{i_c} issue(s)")
+            if s_c > 0:
+                parts.append(f"{s_c} suggestion(s)")
+            if not parts:
+                parts.append("0 issues")
+            file_list_lines.append(f"- {f} - {', '.join(parts)}")
+        file_list_section = "\n".join(file_list_lines)
+
+        # Build current commit link
+        current_sha = review_info.head_sha[:7] if review_info.head_sha else ""
+        commit_link = ""
+        if current_sha:
+            commit_url = await self.vcs.get_commit_url(review_info.head_sha)
+            if commit_url:
+                commit_link = f"[{current_sha}]({commit_url})"
+            else:
+                commit_link = f"`{current_sha}`"
+
+
+        # Format final text comment in Kilocode format
+        final_text = (
+            f"{status_line}\n\n"
+            f"{summary.text.strip()}\n\n"
+            f"{file_list_section}"
+        )
+        if commit_link:
+            final_text += f"\n\n{commit_link}"
+
+        summary.text = final_text
+
         logger.info(f"Posting summary review comment ({len(summary.text)} chars)")
         await self.review_comment_gateway.process_summary_comment(summary)
+
+        if recommend_merge:
+            logger.info("Recommendation is Merge. Approving Pull Request.")
+            await self.vcs.approve_pull_request()
+
         await hook.emit_summary_review_complete(self.cost.aggregate())
+

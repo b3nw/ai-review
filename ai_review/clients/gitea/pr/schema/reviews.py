@@ -1,8 +1,9 @@
 from typing import Literal
 
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, RootModel, Field
 
 from ai_review.clients.gitea.pr.schema.user import GiteaUserSchema
+
 
 
 class GiteaReviewSchema(BaseModel):
@@ -29,9 +30,10 @@ class GiteaReviewInlineCommentSchema(BaseModel):
 
 class GiteaCreateReviewRequestSchema(BaseModel):
     body: str | None = None
-    event: Literal["COMMENT"] = "COMMENT"
-    comments: list[GiteaReviewInlineCommentSchema]
+    event: Literal["COMMENT", "APPROVE", "REQUEST_CHANGES", "PENDING"] = "COMMENT"
+    comments: list[GiteaReviewInlineCommentSchema] = Field(default_factory=list)
     commit_id: str | None = None
+
 
 
 class GiteaCreateReviewResponseSchema(BaseModel):

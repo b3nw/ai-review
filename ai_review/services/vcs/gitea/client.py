@@ -216,3 +216,61 @@ class GiteaVCSClient(VCSClientProtocol):
         except Exception as error:
             logger.exception(f"Failed to build general threads for {self.pull_request_ref}: {error}")
             return []
+
+    async def get_commit_url(self, sha: str) -> str | None:
+        try:
+            api_url = str(settings.vcs.http_client.api_url_value)
+            base_url = api_url.split("/api/v1")[0].rstrip("/")
+            return f"{base_url}/{self.owner}/{self.repo}/commit/{sha}"
+        except Exception:
+            return None
+
+    # --- Reviewer management & approvals ---
+    async def get_authenticated_user_login(self) -> str | None:
+        try:
+            user = await self.http_client.pr.get_authenticated_user()
+            return user.login
+        except Exception as error:
+            logger.exception(f"Failed to fetch authenticated user login: {error}")
+            return None
+
+    async def request_reviewers(self, reviewers: list[str]) -> None:
+        try:
+            await self.http_client.pr.request_reviewers(
+                owner=self.owner,
+                repo=self.repo,
+                pull_number=self.pull_number,
+                reviewers=reviewers,
+            )
+        except Exception as error:
+            # Swallowed: failing to request reviewers is a non-blocking configuration-level error.
+            # It should not fail the entire review run if code analysis succeeded.
+            logger.exception(f"Failed to request reviewers {reviewers}: {error}")
+
+    async def approve_pull_request(self) -> None:
+        try:
+            await self.http_client.pr.approve_pull_request(
+                owner=self.owner,
+                repo=self.repo,
+                pull_number=self.pull_number,
+            )
+        except Exception as error:
+            # Swallowed: PR approval failure is a non-critical permission/workflow action.
+            # Swallowing it prevents crashing the run when review comments have been posted.
+            logger.exception(f"Failed to approve PR: {error}")
+
+    async def update_general_comment(self, comment_id: int | str, message: str) -> None:
+        try:
+            await self.http_client.pr.update_general_comment(
+                owner=self.owner,
+                repo=self.repo,
+                comment_id=comment_id,
+                message=message,
+            )
+        except Exception as error:
+            # Re-raised: failing to update the summary comment is a data integrity error
+            # that must be bubbled up to halt the pipeline and flag summary failure.
+            logger.exception(f"Failed to update general comment {comment_id}: {error}")
+            raise
+
+

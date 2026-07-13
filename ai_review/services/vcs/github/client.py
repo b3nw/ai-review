@@ -258,3 +258,52 @@ class GitHubVCSClient(VCSClientProtocol):
         except Exception as error:
             logger.exception(f"Failed to build general threads for {self.pull_request_ref}: {error}")
             return []
+
+    async def get_commit_url(self, sha: str) -> str | None:
+        return f"https://github.com/{self.owner}/{self.repo}/commit/{sha}"
+
+    # --- Reviewer management & approvals ---
+    async def get_authenticated_user_login(self) -> str | None:
+        try:
+            response = await self.http_client.pr.get("/user")
+            return response.json().get("login")
+        except Exception as error:
+            logger.exception(f"Failed to fetch authenticated user login: {error}")
+            return None
+
+    async def request_reviewers(self, reviewers: list[str]) -> None:
+        try:
+            await self.http_client.pr.post(
+                f"/repos/{self.owner}/{self.repo}/pulls/{self.pull_number}/requested_reviewers",
+                json={"reviewers": reviewers}
+            )
+        except Exception as error:
+            # Swallowed: failing to request reviewers is a non-blocking configuration-level error.
+            # It should not fail the entire review run if code analysis succeeded.
+            logger.exception(f"Failed to request reviewers {reviewers}: {error}")
+
+    async def approve_pull_request(self) -> None:
+        try:
+            await self.http_client.pr.post(
+                f"/repos/{self.owner}/{self.repo}/pulls/{self.pull_number}/reviews",
+                json={"event": "APPROVE", "body": "Approved by AI reviewer"}
+            )
+        except Exception as error:
+            # Swallowed: PR approval failure is a non-critical permission/workflow action.
+            # Swallowing it prevents crashing the run when review comments have been posted.
+            logger.exception(f"Failed to approve PR: {error}")
+
+    async def update_general_comment(self, comment_id: int | str, message: str) -> None:
+        try:
+            await self.http_client.pr.patch(
+                f"/repos/{self.owner}/{self.repo}/issues/comments/{comment_id}",
+                json={"body": message}
+            )
+        except Exception as error:
+            # Re-raised: failing to update the summary comment is a data integrity error
+            # that must be bubbled up to halt the pipeline and flag summary failure.
+            logger.exception(f"Failed to update general comment {comment_id}: {error}")
+            raise
+
+
+

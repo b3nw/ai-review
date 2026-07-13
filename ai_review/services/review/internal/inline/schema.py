@@ -1,4 +1,4 @@
-from typing import Self
+from typing import Self, Literal
 
 from pydantic import BaseModel, Field, RootModel, field_validator
 
@@ -10,8 +10,10 @@ DedupKey = tuple[str, int, str]
 class InlineCommentSchema(BaseModel):
     file: str = Field(min_length=1)
     line: int = Field(ge=1)
+    severity: Literal["CRITICAL", "WARNING", "SUGGESTION", "INFO"] = "WARNING"
     message: str = Field(min_length=1)
     suggestion: str | None = None
+
 
     @field_validator("file")
     def normalize_file(cls, value: str) -> str:
@@ -28,10 +30,11 @@ class InlineCommentSchema(BaseModel):
 
     @property
     def body(self) -> str:
+        severity_prefix = f"**{self.severity}**: " if self.severity else ""
         if self.suggestion:
-            return f"{self.message}\n\n```suggestion\n{self.suggestion}\n```"
+            return f"{severity_prefix}{self.message}\n\n```suggestion\n{self.suggestion}\n```"
 
-        return self.message
+        return f"{severity_prefix}{self.message}"
 
     @property
     def body_with_tag(self) -> str:
@@ -39,7 +42,8 @@ class InlineCommentSchema(BaseModel):
 
     @property
     def fallback_body(self) -> str:
-        return f"**{self.file}:{self.line}** — {self.message}"
+        severity_prefix = f"**{self.severity}**: " if self.severity else ""
+        return f"**{self.file}:{self.line}** — {severity_prefix}{self.message}"
 
 
 class InlineCommentListSchema(RootModel[list[InlineCommentSchema]]):

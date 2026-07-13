@@ -128,14 +128,30 @@ class ReviewService:
             summary_comment_reply=self.summary_comment_reply,
             review_comment_gateway=self.review_comment_gateway
         )
+        self._reviewer_assigned = False
+
+    async def assign_reviewer(self) -> None:
+        if self._reviewer_assigned:
+            return
+        try:
+            login = await self.vcs.get_authenticated_user_login()
+            if login:
+                logger.info(f"Assigning {login} as requested reviewer")
+                await self.vcs.request_reviewers([login])
+                self._reviewer_assigned = True
+        except Exception as error:
+            logger.warning(f"Failed to auto-assign reviewer: {error}")
+
 
     async def run_inline_review(self) -> None:
+        await self.assign_reviewer()
         await self.inline_review_runner.run()
 
     async def run_context_review(self) -> None:
         await self.context_review_runner.run()
 
     async def run_summary_review(self) -> None:
+        await self.assign_reviewer()
         await self.summary_review_runner.run()
 
     async def run_inline_reply_review(self) -> None:
@@ -143,6 +159,7 @@ class ReviewService:
 
     async def run_summary_reply_review(self) -> None:
         await self.summary_reply_review_runner.run()
+
 
     async def run_clear_inline_review(self) -> None:
         await self.review_comment_gateway.clear_inline_comments()

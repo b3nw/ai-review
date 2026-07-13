@@ -22,6 +22,8 @@ class ReviewLLMGatewayProtocol(Protocol):
 class ReviewCommentGatewayProtocol(Protocol):
     vcs: VCSClientProtocol
     artifacts: ArtifactsServiceProtocol
+    created_inline_comments: list[InlineCommentSchema]
+
 
     async def get_inline_threads(self) -> list[ReviewThreadSchema]:
         ...

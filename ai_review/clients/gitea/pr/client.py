@@ -13,6 +13,7 @@ from ai_review.clients.gitea.pr.schema.files import (
     GiteaGetPRFilesResponseSchema
 )
 from ai_review.clients.gitea.pr.schema.pull_request import GiteaGetPRResponseSchema
+from ai_review.clients.gitea.pr.schema.user import GiteaUserSchema
 from ai_review.clients.gitea.pr.schema.reviews import (
     GiteaReviewSchema,
     GiteaReviewCommentSchema,
@@ -133,6 +134,49 @@ class GiteaPullRequestsHTTPClient(HTTPClient, GiteaPullRequestsHTTPClientProtoco
     async def delete_review_comment_api(self, owner: str, repo: str, comment_id: int | str) -> Response:
         return await self.delete(f"/repos/{owner}/{repo}/pulls/comments/{comment_id}")
 
+    @handle_http_error(client="GiteaPullRequestsHTTPClient", exception=GiteaPullRequestsHTTPClientError)
+    async def get_authenticated_user_api(self) -> Response:
+        return await self.get("/user")
+
+    @handle_http_error(client="GiteaPullRequestsHTTPClient", exception=GiteaPullRequestsHTTPClientError)
+    async def request_reviewers_api(
+            self,
+            owner: str,
+            repo: str,
+            pull_number: str,
+            reviewers: list[str]
+    ) -> Response:
+        return await self.post(
+            f"/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+            json={"reviewers": reviewers}
+        )
+
+    @handle_http_error(client="GiteaPullRequestsHTTPClient", exception=GiteaPullRequestsHTTPClientError)
+    async def approve_pull_request_api(
+            self,
+            owner: str,
+            repo: str,
+            pull_number: str
+    ) -> Response:
+        return await self.post(
+            f"/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+            json={"event": "APPROVE", "body": "Approved by AI reviewer"}
+        )
+
+    @handle_http_error(client="GiteaPullRequestsHTTPClient", exception=GiteaPullRequestsHTTPClientError)
+    async def update_general_comment_api(
+            self,
+            owner: str,
+            repo: str,
+            comment_id: int | str,
+            message: str
+    ) -> Response:
+        return await self.patch(
+            f"/repos/{owner}/{repo}/issues/comments/{comment_id}",
+            json={"body": message}
+        )
+
+
     async def get_pull_request(self, owner: str, repo: str, pull_number: str) -> GiteaGetPRResponseSchema:
         response = await self.get_pull_request_api(owner, repo, pull_number)
         return GiteaGetPRResponseSchema.model_validate_json(response.text)
@@ -235,3 +279,17 @@ class GiteaPullRequestsHTTPClient(HTTPClient, GiteaPullRequestsHTTPClientProtoco
 
     async def delete_review_comment(self, owner: str, repo: str, comment_id: int | str) -> None:
         await self.delete_review_comment_api(owner, repo, comment_id)
+
+    async def get_authenticated_user(self) -> GiteaUserSchema:
+        response = await self.get_authenticated_user_api()
+        return GiteaUserSchema.model_validate_json(response.text)
+
+    async def request_reviewers(self, owner: str, repo: str, pull_number: str, reviewers: list[str]) -> None:
+        await self.request_reviewers_api(owner, repo, pull_number, reviewers)
+
+    async def approve_pull_request(self, owner: str, repo: str, pull_number: str) -> None:
+        await self.approve_pull_request_api(owner, repo, pull_number)
+
+    async def update_general_comment(self, owner: str, repo: str, comment_id: int | str, message: str) -> None:
+        await self.update_general_comment_api(owner, repo, comment_id, message)
+

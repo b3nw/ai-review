@@ -7,6 +7,7 @@ Format:
   {
     "file": "<relative_file_path>",
     "line": <line_number>,
+    "severity": "<CRITICAL | WARNING | SUGGESTION | INFO>",
     "message": "<short review message explaining the issue or suggestion>",
     "suggestion": "<replacement code block, without markdown, or null if not applicable>"
   }
@@ -17,6 +18,11 @@ Rules:
 
 - "file" must exactly match the file path in the diff.
 - "line" must be an integer from the new version of the file.
+- "severity" must classify the review comment:
+    - "CRITICAL": Major bugs, security flaws, compilation issues, or severe logical errors.
+    - "WARNING": Code smells, minor bugs, performance/maintainability issues.
+    - "SUGGESTION": Non-critical refactoring or minor code style recommendations.
+    - "INFO": Educational notes or positive feedback.
 - "message" must be a short, clear, and actionable explanation (1 sentence).
 - "suggestion" must contain ONLY the code to replace the line(s), without markdown or comments.
     - Use correct indentation from the file.
