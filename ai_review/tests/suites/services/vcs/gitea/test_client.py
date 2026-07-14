@@ -85,9 +85,15 @@ async def test_create_inline_comment_posts_review(
     )
 
     calls = fake_gitea_pull_requests_http_client.calls
+    review_calls = [payload for name, payload in calls if name == "create_review"]
 
-    assert any(name == "create_review" for name, _ in calls)
+    assert review_calls
     assert not any(name == "create_comment" for name, _ in calls)
+    # Empty body avoids orphan "Inline review" conversation shells in Gitea.
+    assert review_calls[0]["body"] == ""
+    assert review_calls[0]["comments"][0]["path"] == "src/main.py"
+    assert review_calls[0]["comments"][0]["body"] == "Inline comment"
+    assert review_calls[0]["comments"][0]["new_position"] == 10
 
 
 @pytest.mark.asyncio

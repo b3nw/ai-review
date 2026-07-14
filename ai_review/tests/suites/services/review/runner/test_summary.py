@@ -121,7 +121,7 @@ async def test_approval_policy_suggestions_only(
         fake_vcs_client: FakeVCSClient,
         fake_review_comment_gateway: FakeReviewCommentGateway,
 ):
-    """Suggestions only => COMMENT review submitted (no approval)."""
+    """Suggestions only => summary comment only (no redundant formal COMMENT review)."""
     from ai_review.services.review.internal.inline.schema import InlineCommentSchema
     fake_review_comment_gateway.created_inline_comments = [
         InlineCommentSchema(file="app.py", line=10, message="Use descriptive names", severity="SUGGESTION")
@@ -130,9 +130,7 @@ async def test_approval_policy_suggestions_only(
     await summary_review_runner.run()
 
     submit_review_calls = [call for call in fake_vcs_client.calls if call[0] == "submit_review"]
-    assert len(submit_review_calls) == 1
-    call_args = submit_review_calls[0]
-    assert call_args[1][1] == "COMMENT"
+    assert submit_review_calls == []
     assert "Suggestions Only" in fake_review_comment_gateway.calls[-1][1]["comment"].text
 
 
@@ -142,7 +140,7 @@ async def test_approval_policy_warnings_critical(
         fake_vcs_client: FakeVCSClient,
         fake_review_comment_gateway: FakeReviewCommentGateway,
 ):
-    """Warning/critical issues => COMMENT review submitted (no approval)."""
+    """Warning/critical issues => summary comment only (no redundant formal COMMENT review)."""
     from ai_review.services.review.internal.inline.schema import InlineCommentSchema
     fake_review_comment_gateway.created_inline_comments = [
         InlineCommentSchema(file="app.py", line=10, message="Null pointer potential", severity="CRITICAL")
@@ -151,9 +149,7 @@ async def test_approval_policy_warnings_critical(
     await summary_review_runner.run()
 
     submit_review_calls = [call for call in fake_vcs_client.calls if call[0] == "submit_review"]
-    assert len(submit_review_calls) == 1
-    call_args = submit_review_calls[0]
-    assert call_args[1][1] == "COMMENT"
+    assert submit_review_calls == []
     assert "1 Issue Found" in fake_review_comment_gateway.calls[-1][1]["comment"].text
 
 

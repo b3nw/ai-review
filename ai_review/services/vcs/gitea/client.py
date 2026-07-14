@@ -1,3 +1,5 @@
+import asyncio
+
 from ai_review.clients.gitea.client import get_gitea_http_client
 from ai_review.clients.gitea.pr.schema.comments import GiteaCreateCommentRequestSchema
 from ai_review.clients.gitea.pr.schema.reviews import (
@@ -30,6 +32,9 @@ class GiteaVCSClient(VCSClientProtocol):
         self.repo = settings.vcs.pipeline.repo
         self.pull_number = settings.vcs.pipeline.pull_number
         self.pull_request_ref = f"{self.owner}/{self.repo}#{self.pull_number}"
+        # Gitea can drop inline comments when concurrent POST /reviews race;
+        # serialize review creates for a single PR run.
+        self._review_create_lock = asyncio.Lock()
 
     # --- Review info ---
     async def get_review_info(self) -> ReviewInfoSchema:
@@ -125,8 +130,10 @@ class GiteaVCSClient(VCSClientProtocol):
         try:
             logger.info(f"Posting inline comment in {self.pull_request_ref} at {file}:{line}: {message}")
 
+            # Empty review body avoids a conversation "Inline review" shell comment.
+            # Gitea still attaches the inline code comments from `comments`.
             request = GiteaCreateReviewRequestSchema(
-                body="Inline review",
+                body="",
                 comments=[
                     GiteaReviewInlineCommentSchema(
                         path=file,
@@ -135,12 +142,13 @@ class GiteaVCSClient(VCSClientProtocol):
                     )
                 ],
             )
-            await self.http_client.pr.create_review(
-                owner=self.owner,
-                repo=self.repo,
-                pull_number=self.pull_number,
-                request=request,
-            )
+            async with self._review_create_lock:
+                await self.http_client.pr.create_review(
+                    owner=self.owner,
+                    repo=self.repo,
+                    pull_number=self.pull_number,
+                    request=request,
+                )
 
             logger.info(f"Created inline comment in {self.pull_request_ref} at {file}:{line}")
         except Exception as error:
@@ -255,16 +263,17 @@ class GiteaVCSClient(VCSClientProtocol):
             gitea_event = event
             if event == "APPROVE":
                 gitea_event = "APPROVED"
-            await self.http_client.pr.create_review(
-                owner=self.owner,
-                repo=self.repo,
-                pull_number=self.pull_number,
-                request=GiteaCreateReviewRequestSchema(
-                    event=gitea_event,
-                    body=body,
-                    commit_id=commit_id,
+            async with self._review_create_lock:
+                await self.http_client.pr.create_review(
+                    owner=self.owner,
+                    repo=self.repo,
+                    pull_number=self.pull_number,
+                    request=GiteaCreateReviewRequestSchema(
+                        event=gitea_event,
+                        body=body,
+                        commit_id=commit_id,
+                    )
                 )
-            )
         except Exception as error:
             # Swallowed: PR formal review failure is a non-critical permission/workflow action.
             # Swallowing it prevents crashing the run when review comments have been posted.

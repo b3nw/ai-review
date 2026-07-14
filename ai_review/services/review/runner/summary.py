@@ -98,15 +98,18 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
                 file_issues[file_path][1] += 1
 
 
-        # Determine status and recommendation
+        # Determine status and recommendation.
+        # Formal PR reviews are only submitted for clean APPROVED results.
+        # COMMENT reviews with "Address before merge" / "Suggestions only" are
+        # redundant with the summary issue comment and clutter the conversation.
         if issues_count > 0:
             status_line = f"Status: {issues_count} Issue{'s' if issues_count > 1 else ''} Found | Recommendation: Address before merge"
-            review_event = "COMMENT"
-            review_body = "Address before merge"
+            review_event = None
+            review_body = None
         elif suggestions_count > 0:
             status_line = f"Status: Suggestions Only | Recommendation: Comment"
-            review_event = "COMMENT"
-            review_body = "Suggestions only"
+            review_event = None
+            review_body = None
         else:
             status_line = f"Status: No Issues Found | Recommendation: Merge"
             review_event = "APPROVED"
@@ -150,17 +153,19 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
         logger.info(f"Posting summary review comment ({len(summary.text)} chars)")
         await self.review_comment_gateway.process_summary_comment(summary)
 
-        head_sha = review_info.head_sha or ""
-        logger.info(f"Submitting formal review: event={review_event}, commit_id={head_sha}")
-        try:
-            await self.vcs.submit_review(
-                commit_id=head_sha,
-                event=review_event,
-                body=review_body,
-            )
-        except Exception as error:
-            logger.warning(f"Failed to submit formal review: {error}")
-
+        if review_event:
+            head_sha = review_info.head_sha or ""
+            logger.info(f"Submitting formal review: event={review_event}, commit_id={head_sha}")
+            try:
+                await self.vcs.submit_review(
+                    commit_id=head_sha,
+                    event=review_event,
+                    body=review_body,
+                )
+            except Exception as error:
+                logger.warning(f"Failed to submit formal review: {error}")
+        else:
+            logger.info("Skipping formal COMMENT review; summary issue comment is authoritative")
 
         await hook.emit_summary_review_complete(self.cost.aggregate())
 
