@@ -351,11 +351,12 @@ async def test_process_inline_fallback_comment_error(
 
 
 @pytest.mark.asyncio
-async def test_process_inline_comments_calls_each(
+async def test_process_inline_comments_uses_batch(
         fake_vcs_client: FakeVCSClient,
+        fake_artifacts_service: FakeArtifactsService,
         review_comment_gateway: ReviewCommentGateway,
 ):
-    """Should process all inline comments concurrently."""
+    """Should post all inline comments via a single VCS batch call."""
     comments = InlineCommentListSchema(root=[
         InlineCommentSchema(file="a.py", line=1, message="c1"),
         InlineCommentSchema(file="b.py", line=2, message="c2"),
@@ -363,8 +364,41 @@ async def test_process_inline_comments_calls_each(
 
     await review_comment_gateway.process_inline_comments(comments)
 
+    batch_calls = [call for call in fake_vcs_client.calls if call[0] == "create_inline_comments"]
+    assert len(batch_calls) == 1
+    assert len(batch_calls[0][1][0]) == 2
+
+    # FakeVCSClient batch defaults to sequential create_inline_comment
     created = [call for call in fake_vcs_client.calls if call[0] == "create_inline_comment"]
     assert len(created) == 2
+    assert len(review_comment_gateway.created_inline_comments) == 2
+    assert sum(1 for call in fake_artifacts_service.calls if call[0] == "save_vcs_inline") == 2
+
+
+@pytest.mark.asyncio
+async def test_process_inline_comments_batch_failure_falls_back_per_comment(
+        capsys: pytest.CaptureFixture,
+        fake_vcs_client: FakeVCSClient,
+        review_comment_gateway: ReviewCommentGateway,
+):
+    """When batch post fails, fall back to per-comment posting."""
+    comments = InlineCommentListSchema(root=[
+        InlineCommentSchema(file="a.py", line=1, message="c1"),
+        InlineCommentSchema(file="b.py", line=2, message="c2"),
+    ])
+
+    async def failing_batch(batch):
+        raise RuntimeError("batch failed")
+
+    fake_vcs_client.create_inline_comments = failing_batch
+
+    await review_comment_gateway.process_inline_comments(comments)
+    output = capsys.readouterr().out
+
+    assert "falling back to per-comment posting" in output
+    created = [call for call in fake_vcs_client.calls if call[0] == "create_inline_comment"]
+    assert len(created) == 2
+    assert len(review_comment_gateway.created_inline_comments) == 2
 
 
 @pytest.mark.asyncio

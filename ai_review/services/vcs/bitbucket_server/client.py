@@ -18,6 +18,7 @@ from ai_review.services.vcs.types import (
     ReviewInfoSchema,
     ReviewThreadSchema,
     ReviewCommentSchema,
+    InlineCommentCreateSchema,
 )
 
 logger = get_logger("BITBUCKET_SERVER_VCS_CLIENT")
@@ -165,6 +166,10 @@ class BitbucketServerVCSClient(VCSClientProtocol):
                 f"Failed to create inline comment in {self.pull_request_ref} at {file}:{line}: {error}"
             )
             raise
+
+    async def create_inline_comments(self, comments: list[InlineCommentCreateSchema]) -> None:
+        for comment in comments:
+            await self.create_inline_comment(comment.file, comment.line, comment.message)
 
     async def delete_general_comment(self, comment_id: int | str) -> None:
         try:

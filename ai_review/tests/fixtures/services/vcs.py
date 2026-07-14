@@ -7,6 +7,7 @@ from ai_review.services.vcs.types import (
     ReviewInfoSchema,
     ReviewThreadSchema,
     ReviewCommentSchema,
+    InlineCommentCreateSchema,
 )
 
 
@@ -43,6 +44,16 @@ class FakeVCSClient(VCSClientProtocol):
             raise error
 
         return self.responses.get("create_inline_comment_result", None)
+
+    async def create_inline_comments(self, comments: list[InlineCommentCreateSchema]) -> None:
+        self.calls.append(("create_inline_comments", (comments,), {}))
+        if error := self.responses.get("create_inline_comments_error"):
+            raise error
+        if "create_inline_comments_result" in self.responses:
+            return self.responses["create_inline_comments_result"]
+
+        for comment in comments:
+            await self.create_inline_comment(comment.file, comment.line, comment.message)
 
     async def delete_general_comment(self, comment_id: int | str) -> None:
         self.calls.append(("delete_general_comment", (comment_id,), {}))

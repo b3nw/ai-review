@@ -46,6 +46,14 @@ class ReviewCommentSchema(BaseModel):
     thread_id: str | int | None = None
 
 
+class InlineCommentCreateSchema(BaseModel):
+    """Payload for posting one or more inline comments (file + line + body)."""
+
+    file: str
+    line: int = Field(ge=1)
+    message: str
+
+
 class ReviewThreadSchema(BaseModel):
     id: str | int
     kind: ThreadKind
@@ -76,6 +84,14 @@ class VCSClientProtocol(Protocol):
 
     async def create_inline_comment(self, file: str, line: int, message: str) -> None:
         """Post a comment attached to a specific line in file."""
+
+    async def create_inline_comments(self, comments: list[InlineCommentCreateSchema]) -> None:
+        """
+        Post multiple inline comments in one VCS operation when supported.
+
+        Providers that cannot batch (most non-Gitea clients) should post sequentially.
+        Empty lists are a no-op.
+        """
 
     async def delete_general_comment(self, comment_id: int | str) -> None:
         """Delete a top-level (general / summary) review comment by its identifier."""

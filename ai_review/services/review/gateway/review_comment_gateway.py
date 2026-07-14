@@ -11,7 +11,12 @@ from ai_review.services.review.internal.inline.schema import InlineCommentListSc
 from ai_review.services.review.internal.inline_reply.schema import InlineCommentReplySchema
 from ai_review.services.review.internal.summary.schema import SummaryCommentSchema
 from ai_review.services.review.internal.summary_reply.schema import SummaryCommentReplySchema
-from ai_review.services.vcs.types import VCSClientProtocol, ReviewThreadSchema, ReviewCommentSchema
+from ai_review.services.vcs.types import (
+    VCSClientProtocol,
+    ReviewThreadSchema,
+    ReviewCommentSchema,
+    InlineCommentCreateSchema,
+)
 
 logger = get_logger("REVIEW_COMMENT_GATEWAY")
 
@@ -267,7 +272,38 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
             await hook.emit_summary_comment_error(comment)
 
     async def process_inline_comments(self, comments: InlineCommentListSchema) -> None:
-        await bounded_gather([self.process_inline_comment(comment) for comment in comments.root])
+        if not comments.root:
+            return
+
+        # Prefer a single VCS batch (Gitea: one multi-comment review) to avoid
+        # one conversation box per finding. Fall back to per-comment on failure
+        # so line-level fallback and partial recovery still work.
+        try:
+            await self.vcs.create_inline_comments(
+                [
+                    InlineCommentCreateSchema(
+                        file=comment.file,
+                        line=comment.line,
+                        message=comment.body_with_tag,
+                    )
+                    for comment in comments.root
+                ]
+            )
+        except Exception as error:
+            logger.exception(
+                f"Batch inline comment post failed ({len(comments.root)} comment(s)): {error}; "
+                f"falling back to per-comment posting"
+            )
+            await bounded_gather([self.process_inline_comment(comment) for comment in comments.root])
+            return
+
+        for comment in comments.root:
+            await hook.emit_inline_comment_start(comment)
+            self.created_inline_comments.append(comment)
+            await hook.emit_inline_comment_complete(comment)
+            await self.artifacts.save_vcs_inline(comment)
+
+        logger.info(f"Posted {len(comments.root)} inline comment(s) via batch")
 
     async def clear_inline_comments(self) -> None:
         await hook.emit_clear_inline_comments_start()

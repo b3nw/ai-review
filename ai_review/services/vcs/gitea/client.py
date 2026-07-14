@@ -20,6 +20,7 @@ from ai_review.services.vcs.types import (
     ReviewInfoSchema,
     ReviewThreadSchema,
     ReviewCommentSchema,
+    InlineCommentCreateSchema,
 )
 
 logger = get_logger("GITEA_VCS_CLIENT")
@@ -125,19 +126,32 @@ class GiteaVCSClient(VCSClientProtocol):
             raise
 
     async def create_inline_comment(self, file: str, line: int, message: str) -> None:
-        try:
-            logger.info(f"Posting inline comment in {self.pull_request_ref} at {file}:{line}: {message}")
+        await self.create_inline_comments(
+            [InlineCommentCreateSchema(file=file, line=line, message=message)]
+        )
 
-            # Empty review body avoids a conversation "Inline review" shell comment.
-            # Gitea still attaches the inline code comments from `comments`.
+    async def create_inline_comments(self, comments: list[InlineCommentCreateSchema]) -> None:
+        if not comments:
+            return
+
+        try:
+            locations = ", ".join(f"{c.file}:{c.line}" for c in comments)
+            logger.info(
+                f"Posting {len(comments)} inline comment(s) in {self.pull_request_ref} "
+                f"as a single review: {locations}"
+            )
+
+            # One review with N comments → one conversation shell (empty body) instead of
+            # N separate reviews (one box per finding) in the Gitea PR timeline.
             request = GiteaCreateReviewRequestSchema(
                 body="",
                 comments=[
                     GiteaReviewInlineCommentSchema(
-                        path=file,
-                        body=message,
-                        new_position=line
+                        path=comment.file,
+                        body=comment.message,
+                        new_position=comment.line,
                     )
+                    for comment in comments
                 ],
             )
             async with self._review_create_lock:
@@ -148,9 +162,13 @@ class GiteaVCSClient(VCSClientProtocol):
                     request=request,
                 )
 
-            logger.info(f"Created inline comment in {self.pull_request_ref} at {file}:{line}")
+            logger.info(
+                f"Created {len(comments)} inline comment(s) in one review for {self.pull_request_ref}"
+            )
         except Exception as error:
-            logger.exception(f"Failed to create inline comment in {self.pull_request_ref} at {file}:{line}: {error}")
+            logger.exception(
+                f"Failed to create {len(comments)} inline comment(s) in {self.pull_request_ref}: {error}"
+            )
             raise
 
     async def delete_general_comment(self, comment_id: int | str) -> None:

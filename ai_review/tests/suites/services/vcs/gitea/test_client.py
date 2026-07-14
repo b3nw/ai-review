@@ -8,7 +8,13 @@ from ai_review.clients.gitea.pr.schema.reviews import (
 )
 from ai_review.clients.gitea.pr.schema.user import GiteaUserSchema
 from ai_review.services.vcs.gitea.client import GiteaVCSClient
-from ai_review.services.vcs.types import ReviewInfoSchema, ReviewCommentSchema, ReviewThreadSchema, ThreadKind
+from ai_review.services.vcs.types import (
+    ReviewInfoSchema,
+    ReviewCommentSchema,
+    ReviewThreadSchema,
+    ThreadKind,
+    InlineCommentCreateSchema,
+)
 from ai_review.tests.fixtures.clients.gitea import FakeGiteaPullRequestsHTTPClient
 
 
@@ -118,6 +124,50 @@ async def test_create_inline_comment_raises_on_error(
             line=10,
             message="Inline comment",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_create_inline_comments_posts_single_review_with_all_comments(
+        gitea_vcs_client: GiteaVCSClient,
+        fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
+):
+    """Option A: all findings go into one Gitea review (one conversation box)."""
+    await gitea_vcs_client.create_inline_comments(
+        [
+            InlineCommentCreateSchema(file="src/main.py", line=10, message="First"),
+            InlineCommentCreateSchema(file="src/main.py", line=20, message="Second"),
+            InlineCommentCreateSchema(file="src/other.py", line=5, message="Third"),
+        ]
+    )
+
+    review_calls = [
+        payload
+        for name, payload in fake_gitea_pull_requests_http_client.calls
+        if name == "create_review"
+    ]
+    assert len(review_calls) == 1
+    assert review_calls[0]["body"] == ""
+    assert len(review_calls[0]["comments"]) == 3
+    assert review_calls[0]["comments"][0]["path"] == "src/main.py"
+    assert review_calls[0]["comments"][0]["new_position"] == 10
+    assert review_calls[0]["comments"][0]["body"] == "First"
+    assert review_calls[0]["comments"][1]["path"] == "src/main.py"
+    assert review_calls[0]["comments"][1]["new_position"] == 20
+    assert review_calls[0]["comments"][2]["path"] == "src/other.py"
+    assert review_calls[0]["comments"][2]["new_position"] == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("gitea_http_client_config")
+async def test_create_inline_comments_empty_is_noop(
+        gitea_vcs_client: GiteaVCSClient,
+        fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
+):
+    await gitea_vcs_client.create_inline_comments([])
+    assert not any(
+        name == "create_review" for name, _ in fake_gitea_pull_requests_http_client.calls
+    )
 
 
 @pytest.mark.asyncio
