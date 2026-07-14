@@ -118,33 +118,132 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
             logger.exception(f"Failed to process inline fallback comment: {comment} — {error}")
             await hook.emit_summary_comment_error(comment)
 
-    def build_summary_body_with_history(self, new_text: str, old_body: str) -> str:
-        tag = settings.review.summary_tag
-        old_body_clean = old_body.replace(tag, "").strip()
+    # Keep history compact: only the newest N prior snapshots are retained.
+    _SUMMARY_HISTORY_LIMIT = 5
+    _SUMMARY_HISTORY_SEPARATOR = "<!-- ai-review-history-separator -->"
+    _SUMMARY_HISTORY_NOTICE = (
+        "Previous reviews are collapsed below (stale / resolved). "
+        "The summary above is authoritative."
+    )
 
-        separator = "<!-- ai-review-history-separator -->"
-        notice = "Current summary above is authoritative. Previous snapshots are kept for context only."
+    @staticmethod
+    def _authoritative_summary_section(body: str) -> str:
+        """Return only the current/latest section of a summary body."""
+        tag = settings.review.summary_tag
+        text = body.replace(tag, "").strip()
+        separator = ReviewCommentGateway._SUMMARY_HISTORY_SEPARATOR
+        if separator in text:
+            text = text.split(separator, 1)[0].strip()
+        # Drop leftover notices from older stacking formats.
+        text = re.sub(
+            r"(?im)^(?:Current summary above is authoritative\..*|Previous reviews are collapsed below.*)$\n*",
+            "",
+            text,
+        ).strip()
+        return text
+
+    @staticmethod
+    def _snapshot_status_line(content: str) -> str:
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped:
+                return stripped[:160]
+        return "Previous review"
+
+    @staticmethod
+    def _snapshot_sha(content: str) -> str | None:
+        match = re.search(r"\[([0-9a-f]{7,40})\]\(", content)
+        return match.group(1)[:7] if match else None
+
+    @staticmethod
+    def _parse_history_snapshots(history: str) -> list[str]:
+        """Extract discrete prior snapshots from stacked history text."""
+        if not history.strip():
+            return []
+
+        snapshots: list[str] = []
+
+        # Prefer already-collapsed <details> blocks (current format).
+        details_blocks = re.findall(
+            r"<details>\s*<summary>.*?</summary>\s*(.*?)\s*</details>",
+            history,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if details_blocks:
+            for block in details_blocks:
+                cleaned = ReviewCommentGateway._authoritative_summary_section(block)
+                # Nested parent wrapper may have only child details; skip empties.
+                if cleaned and not cleaned.lower().startswith("<details"):
+                    snapshots.append(cleaned)
+            if snapshots:
+                return snapshots
+
+        # Legacy: "### Previous review ..." sections (possibly repeated).
+        sections = re.split(r"(?m)^### Previous review[^\n]*\n", history)
+        for section in sections:
+            cleaned = ReviewCommentGateway._authoritative_summary_section(section)
+            cleaned = re.sub(
+                r"(?im)^(?:Current summary above is authoritative\..*|Previous reviews are collapsed below.*)$\n*",
+                "",
+                cleaned,
+            ).strip()
+            if cleaned:
+                snapshots.append(cleaned)
+
+        return snapshots
+
+    def _format_history_snapshot(self, content: str) -> str:
+        status = self._snapshot_status_line(content)
+        sha = self._snapshot_sha(content)
+        if sha:
+            label = f"Previous review ({sha}) — {status}"
+        else:
+            label = f"Previous review — {status}"
+        # Gitea renders HTML details/summary as collapsible sections.
+        return (
+            f"<details>\n"
+            f"<summary>{label}</summary>\n\n"
+            f"{content.strip()}\n\n"
+            f"</details>"
+        )
+
+    def build_summary_body_with_history(self, new_text: str, old_body: str) -> str:
+        """Stack the new summary on top; hide prior runs in collapsible blocks."""
+        tag = settings.review.summary_tag
+        separator = self._SUMMARY_HISTORY_SEPARATOR
+        old_body_clean = old_body.replace(tag, "").strip()
 
         if separator in old_body_clean:
             parts = old_body_clean.split(separator, 1)
-            prev_latest = parts[0].strip()
+            prev_latest = self._authoritative_summary_section(parts[0])
             prev_history = parts[1].strip() if len(parts) > 1 else ""
         else:
-            prev_latest = old_body_clean
+            prev_latest = self._authoritative_summary_section(old_body_clean)
             prev_history = ""
 
-        sha_match = re.search(r'\[([0-9a-f]{7})\]\(', prev_latest)
-        if sha_match:
-            prev_sha = sha_match.group(1)
-            prev_header = f"### Previous review (commit {prev_sha})"
-        else:
-            prev_header = "### Previous review"
+        snapshots: list[str] = []
+        if prev_latest:
+            snapshots.append(prev_latest)
+        snapshots.extend(self._parse_history_snapshots(prev_history))
 
-        history_block = f"\n\n{notice}\n\n{prev_header}\n{prev_latest}"
-        if prev_history:
-            history_block += f"\n\n{prev_history}"
+        # De-dupe identical consecutive snapshots (re-runs on same text).
+        deduped: list[str] = []
+        for snap in snapshots:
+            if not deduped or deduped[-1] != snap:
+                deduped.append(snap)
+        snapshots = deduped[: self._SUMMARY_HISTORY_LIMIT]
 
-        return f"{new_text}\n\n{separator}{history_block}\n\n{tag}"
+        if not snapshots:
+            return f"{new_text.strip()}\n\n{tag}"
+
+        history_blocks = "\n\n".join(self._format_history_snapshot(s) for s in snapshots)
+        return (
+            f"{new_text.strip()}\n\n"
+            f"{separator}\n\n"
+            f"{self._SUMMARY_HISTORY_NOTICE}\n\n"
+            f"{history_blocks}\n\n"
+            f"{tag}"
+        )
 
 
     async def process_summary_comment(self, comment: SummaryCommentSchema) -> None:

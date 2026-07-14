@@ -477,17 +477,78 @@ async def test_get_summary_comments_excludes_fallback_comments(
 def test_build_summary_body_with_history(
         review_comment_gateway: ReviewCommentGateway,
 ):
-    """Should correctly construct summary body with stack of previous review history."""
+    """Prior reviews should be collapsed under <details>, not expanded inline."""
     new_text = "Status: Suggestions Only | Recommendation: Merge\n\nNew overview\n\n- file.py - 0 issues\n\n[abcdefg](http://commit/abcdefg)"
     old_body = "Status: 1 Issue Found | Recommendation: Address before merge\n\nOld overview\n\n- file.py - 1 issue(s)\n\n[1234567](http://commit/1234567)\n\n#ai-review-summary"
 
     result = review_comment_gateway.build_summary_body_with_history(new_text, old_body)
 
-    assert "Status: Suggestions Only | Recommendation: Merge" in result
+    assert result.startswith("Status: Suggestions Only | Recommendation: Merge")
     assert "<!-- ai-review-history-separator -->" in result
-    assert "### Previous review (commit 1234567)" in result
-    assert "Status: 1 Issue Found | Recommendation: Address before merge" in result
+    assert "<details>" in result
+    assert "</details>" in result
+    assert "<summary>Previous review (1234567) — Status: 1 Issue Found | Recommendation: Address before merge</summary>" in result
+    assert "Old overview" in result
+    # Authoritative section stays expanded; history is after the separator.
+    before, after = result.split("<!-- ai-review-history-separator -->", 1)
+    assert "Old overview" not in before
+    assert "Old overview" in after
     assert result.endswith(f"\n\n{settings.review.summary_tag}")
+
+
+def test_build_summary_body_with_history_migrates_legacy_stack(
+        review_comment_gateway: ReviewCommentGateway,
+):
+    """Already-stacked legacy history is re-wrapped into collapsible snapshots."""
+    new_text = "Status: No Issues Found | Recommendation: Merge\n\nClean\n\n[aabbccd](http://c/aabbccd)"
+    old_body = (
+        "Status: 2 Issues Found | Recommendation: Address before merge\n\n"
+        "Mid overview\n\n[2108ebb](http://c/2108ebb)\n\n"
+        "<!-- ai-review-history-separator -->\n\n"
+        "Current summary above is authoritative. Previous snapshots are kept for context only.\n\n"
+        "### Previous review (commit 517ac94)\n"
+        "Status: 4 Issues Found | Recommendation: Address before merge\n\n"
+        "Oldest overview\n\n[517ac94](http://c/517ac94)\n\n"
+        "#ai-review-summary"
+    )
+
+    result = review_comment_gateway.build_summary_body_with_history(new_text, old_body)
+
+    assert result.count("<details>") == 2
+    assert "Mid overview" in result
+    assert "Oldest overview" in result
+    assert "### Previous review" not in result
+    assert "Current summary above is authoritative" not in result
+    before, _ = result.split("<!-- ai-review-history-separator -->", 1)
+    assert "Mid overview" not in before
+    assert "Oldest overview" not in before
+
+
+def test_build_summary_body_with_history_dedupes_and_limits(
+        review_comment_gateway: ReviewCommentGateway,
+):
+    """Identical consecutive snapshots collapse; history is capped."""
+    review_comment_gateway._SUMMARY_HISTORY_LIMIT = 2
+    new_text = "Status: No Issues Found | Recommendation: Merge\n\nLatest\n\n[1111111](http://c/1111111)"
+    snap_a = "Status: A\n\nA body\n\n[aaaaaaa](http://c/aaaaaaa)"
+    snap_b = "Status: B\n\nB body\n\n[bbbbbbb](http://c/bbbbbbb)"
+    snap_c = "Status: C\n\nC body\n\n[ccccccc](http://c/ccccccc)"
+    old_body = (
+        f"{snap_a}\n\n"
+        "<!-- ai-review-history-separator -->\n\n"
+        f"{review_comment_gateway._format_history_snapshot(snap_a)}\n\n"
+        f"{review_comment_gateway._format_history_snapshot(snap_b)}\n\n"
+        f"{review_comment_gateway._format_history_snapshot(snap_c)}\n\n"
+        "#ai-review-summary"
+    )
+
+    result = review_comment_gateway.build_summary_body_with_history(new_text, old_body)
+
+    # snap_a de-duped (current prev + first history), then snap_b; snap_c dropped by limit.
+    assert result.count("<details>") == 2
+    assert "A body" in result
+    assert "B body" in result
+    assert "C body" not in result
 
 
 @pytest.mark.asyncio
