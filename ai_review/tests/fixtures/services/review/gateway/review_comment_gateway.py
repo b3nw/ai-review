@@ -105,6 +105,15 @@ class FakeReviewCommentGateway(ReviewCommentGatewayProtocol):
     async def process_inline_comments(self, comments: InlineCommentListSchema) -> None:
         self.calls.append(("process_inline_comments", {"comments": comments}))
 
+    async def clear_inline_comments(self) -> None:
+        self.calls.append(("clear_inline_comments", {}))
+
+    async def clear_summary_comments(self) -> None:
+        self.calls.append(("clear_summary_comments", {}))
+
+    def build_summary_body_with_history(self, new_text: str, old_body: str) -> str:
+        return new_text
+
 
 @pytest.fixture
 def fake_review_comment_gateway() -> FakeReviewCommentGateway:

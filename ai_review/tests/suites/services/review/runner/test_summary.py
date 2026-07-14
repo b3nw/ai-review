@@ -170,3 +170,31 @@ async def test_inline_finding_prevents_no_issues_found(
     assert "Suggestions Only" in summary_comment.text
     assert "No Issues Found" not in summary_comment.text
 
+
+@pytest.mark.asyncio
+async def test_llm_findings_block_approve_when_inline_empty(
+        summary_review_runner: SummaryReviewRunner,
+        fake_vcs_client: FakeVCSClient,
+        fake_review_comment_gateway: FakeReviewCommentGateway,
+        fake_summary_comment_service: FakeSummaryCommentService,
+):
+    """If inlines were skipped but the LLM summary reports issues, never APPROVE."""
+    fake_review_comment_gateway.created_inline_comments = []
+    fake_summary_comment_service.responses["parse_model_output"] = SummaryCommentSchema(
+        text=(
+            "## Code Review Summary\n\n"
+            "**Status:** `2 Issues Found` | **Recommendation:** `Address before merge`\n\n"
+            "### Overview\n\n"
+            "| Severity | Count |\n| --- | ---: |\n"
+            "| CRITICAL | `1` |\n| WARNING | `1` |\n| SUGGESTION | `0` |\n"
+        )
+    )
+
+    await summary_review_runner.run()
+
+    submit_review_calls = [call for call in fake_vcs_client.calls if call[0] == "submit_review"]
+    assert submit_review_calls == []
+    summary_comment = fake_review_comment_gateway.calls[-1][1]["comment"]
+    assert "No Issues Found" not in summary_comment.text
+    assert "Address before merge" in summary_comment.text
+

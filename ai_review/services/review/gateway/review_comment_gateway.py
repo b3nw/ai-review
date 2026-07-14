@@ -180,9 +180,23 @@ class ReviewCommentGateway(ReviewCommentGatewayProtocol):
                 await hook.emit_clear_inline_comments_complete(comments=comments)
                 return
 
-            logger.info(f"Clearing {len(comments)} AI inline comments")
+            # Gitea delete_inline_comment removes the whole review by review_id
+            # (stored as comment.id). De-dupe so multi-comment reviews are only
+            # deleted once.
+            seen_ids: set[int | str] = set()
+            to_delete: list[ReviewCommentSchema] = []
+            for comment in comments:
+                if comment.id in seen_ids:
+                    continue
+                seen_ids.add(comment.id)
+                to_delete.append(comment)
 
-            await bounded_gather([self.vcs.delete_inline_comment(comment.id) for comment in comments])
+            logger.info(
+                f"Clearing {len(comments)} AI inline comments "
+                f"({len(to_delete)} review delete(s))"
+            )
+
+            await bounded_gather([self.vcs.delete_inline_comment(comment.id) for comment in to_delete])
             await hook.emit_clear_inline_comments_complete(comments=comments)
         except Exception as error:
             logger.exception(f"Failed to clear inline comments: {error}")

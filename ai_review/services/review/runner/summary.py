@@ -1,3 +1,5 @@
+import re
+
 from ai_review.config import settings
 from ai_review.libs.logger import get_logger
 from ai_review.services.cost.types import CostServiceProtocol
@@ -14,6 +16,16 @@ from ai_review.services.review.runner.types import ReviewRunnerProtocol
 from ai_review.services.vcs.types import VCSClientProtocol
 
 logger = get_logger("SUMMARY_REVIEW_RUNNER")
+
+
+def _llm_summary_reports_findings(summary_text: str) -> bool:
+    """Return True when the model summary body itself reports non-zero findings."""
+    if re.search(r"\*\*Status:\*\*\s*`?\d+\s+Issues?\s+Found`?", summary_text, re.IGNORECASE):
+        return True
+    for severity in ("CRITICAL", "WARNING", "SUGGESTION"):
+        if re.search(rf"\|\s*{severity}\s*\|\s*`?([1-9]\d*)`?\s*\|", summary_text):
+            return True
+    return False
 
 
 class SummaryReviewRunner(ReviewRunnerProtocol):
@@ -98,16 +110,28 @@ class SummaryReviewRunner(ReviewRunnerProtocol):
                 file_issues[file_path][1] += 1
 
 
-        # Determine status and recommendation.
+        # Determine status and recommendation from this-run inline findings.
         # Formal PR reviews are only submitted for clean APPROVED results.
         # COMMENT reviews with "Address before merge" / "Suggestions only" are
         # redundant with the summary issue comment and clutter the conversation.
+        #
+        # Guard: if the LLM summary body itself reports findings, never APPROVE
+        # even when created_inline_comments is empty (e.g. prior-run skip path).
+        llm_has_findings = _llm_summary_reports_findings(summary.text)
         if issues_count > 0:
             status_line = f"Status: {issues_count} Issue{'s' if issues_count > 1 else ''} Found | Recommendation: Address before merge"
             review_event = None
             review_body = None
         elif suggestions_count > 0:
             status_line = f"Status: Suggestions Only | Recommendation: Comment"
+            review_event = None
+            review_body = None
+        elif llm_has_findings:
+            logger.warning(
+                "Inline counters are clean but LLM summary reports findings; "
+                "refusing formal APPROVED and using Comment-only recommendation"
+            )
+            status_line = "Status: Issues Found | Recommendation: Address before merge"
             review_event = None
             review_body = None
         else:

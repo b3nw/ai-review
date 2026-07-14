@@ -87,7 +87,6 @@ class GiteaVCSClient(VCSClientProtocol):
             logger.info(f"Fetched {len(reviews.root)} reviews for {self.pull_request_ref}")
 
             result: list[ReviewCommentSchema] = []
-            seen_review_ids: set[int] = set()
 
             for review in reviews.root:
                 comments = await self.http_client.pr.get_review_comments(
@@ -96,11 +95,10 @@ class GiteaVCSClient(VCSClientProtocol):
                     review_id=review.id,
                     pull_number=self.pull_number,
                 )
+                # Return every inline comment. De-dupe by review id previously
+                # dropped all but one comment per multi-comment review, so
+                # clear/delete could never remove the full set.
                 for comment in comments.root:
-                    if review.id in seen_review_ids:
-                        continue
-
-                    seen_review_ids.add(review.id)
                     result.append(
                         get_review_comment_from_gitea_review_comment(comment, review_id=review.id)
                     )

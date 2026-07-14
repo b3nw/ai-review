@@ -67,10 +67,15 @@ class InlineReviewRunner(ReviewRunnerProtocol):
     async def run(self) -> None:
         await hook.emit_inline_review_start()
 
-        comments = await self.review_comment_gateway.get_inline_comments()
-        if comments:
-            logger.info(f"Detected {len(comments)} existing AI inline comments, skipping inline review")
-            return
+        # Always re-evaluate the current head. Stale AI inlines from a prior
+        # commit would otherwise short-circuit this run, leave
+        # created_inline_comments empty, and cause a false APPROVED summary.
+        existing = await self.review_comment_gateway.get_inline_comments()
+        if existing:
+            logger.info(
+                f"Clearing {len(existing)} existing AI inline comments before re-review"
+            )
+            await self.review_comment_gateway.clear_inline_comments()
 
         review_info = await self.vcs.get_review_info()
         logger.info(f"Starting inline review: {len(review_info.changed_files)} files changed")

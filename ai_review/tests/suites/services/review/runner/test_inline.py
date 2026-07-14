@@ -48,22 +48,24 @@ async def test_run_happy_path(
 
 
 @pytest.mark.asyncio
-async def test_run_skips_when_existing_comments(
+async def test_run_clears_existing_comments_then_reviews(
         inline_review_runner: InlineReviewRunner,
         fake_vcs_client: FakeVCSClient,
+        fake_git_service: FakeGitService,
         fake_review_comment_gateway: FakeReviewCommentGateway,
         fake_review_direct_llm_gateway: FakeReviewDirectLLMGateway,
 ):
-    """Should skip review if there are already existing inline comments."""
+    """Existing AI inlines must be cleared so re-review can evaluate the new head."""
+    fake_git_service.responses["get_diff_for_file"] = "FAKE_DIFF"
     fake_review_comment_gateway.responses["get_inline_comments"] = [
         ReviewCommentSchema(id="1", body=f"{settings.review.inline_tag} existing")
     ]
 
     await inline_review_runner.run()
 
-    vcs_calls = [call[0] for call in fake_vcs_client.calls]
-    assert vcs_calls == []
-    assert not any(call[0] == "ask" for call in fake_review_direct_llm_gateway.calls)
+    assert any(call[0] == "clear_inline_comments" for call in fake_review_comment_gateway.calls)
+    assert "get_review_info" in [call[0] for call in fake_vcs_client.calls]
+    assert any(call[0] == "ask" for call in fake_review_direct_llm_gateway.calls)
 
 
 @pytest.mark.asyncio

@@ -221,12 +221,12 @@ async def test_get_inline_comments_returns_empty_on_api_error(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("gitea_http_client_config")
-async def test_get_inline_comments_deduplicates_by_review_id(
+async def test_get_inline_comments_returns_all_comments_in_review(
         monkeypatch: pytest.MonkeyPatch,
         gitea_vcs_client: GiteaVCSClient,
         fake_gitea_pull_requests_http_client: FakeGiteaPullRequestsHTTPClient,
 ):
-    """When a review has multiple comments, only one entry per review_id should be returned."""
+    """Every inline comment must be returned so clear/delete can remove the full set."""
 
     async def return_single_review(*_, **__):
         return GiteaGetReviewsResponseSchema(root=[
@@ -243,8 +243,8 @@ async def test_get_inline_comments_deduplicates_by_review_id(
     monkeypatch.setattr(fake_gitea_pull_requests_http_client, "get_review_comments", return_two_comments)
 
     comments = await gitea_vcs_client.get_inline_comments()
-    assert len(comments) == 1
-    assert comments[0].id == 700
+    assert len(comments) == 2
+    assert {c.body for c in comments} == {"first", "second"}
 
 
 @pytest.mark.asyncio
